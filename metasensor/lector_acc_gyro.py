@@ -11,15 +11,17 @@ states = []
 
 class State:
     # init
-    def __init__(self, device):
+    def __init__(self, device, logfd):
         self.device = device
         self.callback = cbindings.FnVoid_VoidP_DataP(self.data_handler)
         self.processor = None
         self.gyro = [[], [], []]
+        self.logfd = logfd
     # download data callback fxn
     def data_handler(self, ctx, data):
         values = parse_value(data, n_elem = 2)
         #print("acc: (%.4f,%.4f,%.4f), gyro; (%.4f,%.4f,%.4f)" % (values[0].x, values[0].y, values[0].z, values[1].x, values[1].y, values[1].z))
+        self.logfd.write(f"{values[0].x},{values[0].y},{values[0].z},{values[1].x},{values[1].y},{values[1].z}\n")
         self.gyro[0].append(values[1].x)
         self.gyro[1].append(values[1].y)
         self.gyro[2].append(values[1].z)
@@ -38,8 +40,6 @@ class State:
         fn_wrapper = cbindings.FnVoid_VoidP_VoidP(processor_created)
         # get acc signal
         acc = libmetawear.mbl_mw_acc_get_acceleration_data_signal(self.device.board)
-        # get gyro signal - MMRl, MMR, MMc ONLY
-        #gyro = libmetawear.mbl_mw_gyro_bmi160_get_rotation_data_signal(self.device.board)
         # get gyro signal - MMRS ONLY
         gyro = libmetawear.mbl_mw_gyro_bmi270_get_rotation_data_signal(self.device.board)
         # create signals variable
@@ -53,25 +53,27 @@ class State:
         libmetawear.mbl_mw_datasignal_subscribe(self.processor, None, self.callback)
     # start
     def start(self):
-        # start gyro sampling - MMRL, MMC, MMR only
-        #libmetawear.mbl_mw_gyro_bmi160_enable_rotation_sampling(self.device.board)
         # start gyro sampling - MMS ONLY
         libmetawear.mbl_mw_gyro_bmi270_enable_rotation_sampling(self.device.board)
         # start acc sampling
         libmetawear.mbl_mw_acc_enable_acceleration_sampling(self.device.board)
-        # start gyro - MMRL, MMC, MMR only
-        #libmetawear.mbl_mw_gyro_bmi160_start(self.device.board)
         # start gyro sampling - MMS ONLY
         libmetawear.mbl_mw_gyro_bmi270_start(self.device.board)
         # start acc
         libmetawear.mbl_mw_acc_start(self.device.board)
         
 # connect
+if len(argv) < 2:
+    argv.append("EE:A0:EE:0F:CC:3E")
+
+log = open("acc_gyro.log","w")
+log.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ\n")
+
 for i in range(len(argv) - 1):
     d = MetaWear(argv[i + 1])
     d.connect()
     print("Connected to " + d.address + " over " + ("USB" if d.usb.is_connected else "BLE"))
-    states.append(State(d))
+    states.append(State(d, log))
 
 # configure
 for s in states:
@@ -97,6 +99,8 @@ for s in states:
 
 for e in events:
     e.wait()
+
+log.close()
 
 plt.plot([i for i in range(len(states[0].gyro[0]))], states[0].gyro[0])
 plt.xlabel("Tiempo (s*10e-2)")
