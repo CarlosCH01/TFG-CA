@@ -1,0 +1,10 @@
+Saber cómo extraer datos del aparato
+    Tipos de datos: magnetómetro, acelerómetro, giroscopio, barómetro
+    Forma de extracción: logging en el sensor, streaming
+    Tiempo de extracción: desde el principio, petición del ordenador
+Tratar los datos del aparato para meterlos a la IA
+    Trocear: empaquetar las lecturas en intervalos de tiempo (1 s, por ejemplo)
+    Formato: estadísiticas de los ejes (MAGX,MAGY,MAGZ,ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,BAR) y etiqueta del sujeto
+        Estadísiticas: media, desviación típica, mediana, cuartiles, kurtosis
+Entrenar a la IA
+Obtener predicciones de la IA
