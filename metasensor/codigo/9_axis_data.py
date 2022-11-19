@@ -7,71 +7,91 @@ class State:
     # init
     def __init__(self, device):
         self.device = device
-        self.callback = cbindings.FnVoid_VoidP_DataP(self.data_handler)
+        self.cb_acc = cbindings.FnVoid_VoidP_DataP(self.data_handler_acc)
+        self.cb_gyr = cbindings.FnVoid_VoidP_DataP(self.data_handler_gyr)
+        self.cb_mag = cbindings.FnVoid_VoidP_DataP(self.data_handler_mag)
+        self.cb_read_config = cbindings.FnVoid_VoidP_VoidP_Int(self.read_config)
         self.processor = None
-        self.magnitude1 = cbindings.SensorFusionData.CORRECTED_GYRO
 
     # what to do with sensor generated data
-    def data_handler(self, ctx, data):
-        values = parse_value(data, n_elem = 3)
-        print("gyro; (%.4f,%.4f,%.4f), acc: (%.4f,%.4f,%.4f), mag: (%.4f,%.4f,%.4f)" % \
-            (values[0].x, values[0].y, values[0].z, values[1].x, values[1].y, values[1].z, values[2].x, values[2].y, values[2].z))
+    def data_handler_acc(self, ctx, data):
+        #print(data.contents.epoch)
+        values = parse_value(data)
+        print("acc: (%.4f,%.4f,%.4f)" % (values.x, values.y, values.z))
+
+    def data_handler_gyr(self, ctx, data):
+        values = parse_value(data)
+        print("gyr: (%.4f,%.4f,%.4f)" % (values.x, values.y, values.z))
+
+    def data_handler_mag(self, ctx, data):
+        values = parse_value(data)
+        print("mag: (%.4f,%.4f,%.4f)" % (values.x, values.y, values.z))
+
+    def read_config(self, ctx, board, data):
+        print("gyro output data rate: " + parse_value(data))
 
     def setup(self):
         # ble settings
         libmetawear.mbl_mw_settings_set_connection_parameters(self.device.board, 7.5, 7.5, 0, 6000)
         sleep(1.5)
 
-        ########
-        # events
-        e = Event()
-        # processor callback fxn
-        def processor_created(context, pointer):
-            self.processor = pointer
-            e.set()
-        # processor fxn ptr
-        fn_wrapper = cbindings.FnVoid_VoidP_VoidP(processor_created)
-        ########
+        # setup mag
+        libmetawear.mbl_mw_mag_bmm150_stop(self.device.board)
+        libmetawear.mbl_mw_mag_bmm150_set_preset(self.device.board, cbindings.MagBmm150Preset.REGULAR)
 
-        # set sensor fusion mode
-        libmetawear.mbl_mw_sensor_fusion_set_mode(self.device.board, cbindings.SensorFusionMode.NDOF)
-        libmetawear.mbl_mw_sensor_fusion_set_acc_range(self.device.board, cbindings.SensorFusionAccRange._4G)
-        libmetawear.mbl_mw_sensor_fusion_set_gyro_range(self.device.board, cbindings.SensorFusionGyroRange._2000DPS)
-        libmetawear.mbl_mw_sensor_fusion_write_config(self.device.board)
+        # get acc signal
+        acc = libmetawear.mbl_mw_acc_get_acceleration_data_signal(self.device.board)
+        # get gyro signal - MMRS ONLY
+        gyr = libmetawear.mbl_mw_gyro_bmi270_get_rotation_data_signal(self.device.board)
+        # get mag signal
+        mag = libmetawear.mbl_mw_mag_bmm150_get_b_field_data_signal(self.device.board)
 
-        signal1 = libmetawear.mbl_mw_sensor_fusion_get_data_signal(self.device.board, self.magnitude1)
-        signal_acc = libmetawear.mbl_mw_sensor_fusion_get_data_signal(self.device.board, cbindings.SensorFusionData.CORRECTED_ACC)
-        signal_mag = libmetawear.mbl_mw_sensor_fusion_get_data_signal(self.device.board, cbindings.SensorFusionData.CORRECTED_MAG)
-
-        signals = (cbindings.c_void_p * 1)()
-        signals[0] = signal1
-        libmetawear.mbl_mw_dataprocessor_fuser_create(signal_acc, signals, 1, None, fn_wrapper)
-        # wait for fuser to be created
-        e.wait()
-        libmetawear.mbl_mw_dataprocessor_fuser_create(signal_mag, signals, 2, None, fn_wrapper)
-        # wait for fuser to be created
-        e.wait()
-
-        #libmetawear.mbl_mw_datasignal_subscribe(signal1, None, self.callback)
-        libmetawear.mbl_mw_datasignal_subscribe(self.processor, None, self.callback)
+        libmetawear.mbl_mw_datasignal_subscribe(acc, None, self.cb_acc)
+        libmetawear.mbl_mw_datasignal_subscribe(gyr, None, self.cb_gyr)
+        libmetawear.mbl_mw_datasignal_subscribe(mag, None, self.cb_mag)
 
     def start(self):
-        libmetawear.mbl_mw_sensor_fusion_enable_data(self.device.board, self.magnitude1)
-        libmetawear.mbl_mw_sensor_fusion_enable_data(self.device.board, cbindings.SensorFusionData.CORRECTED_ACC)
-        libmetawear.mbl_mw_sensor_fusion_enable_data(self.device.board, cbindings.SensorFusionData.CORRECTED_MAG)
-        print("error gordo, ¿qué pasa?")
-        libmetawear.mbl_mw_sensor_fusion_start(self.device.board)
+        # start gyro sampling - MMS ONLY
+        libmetawear.mbl_mw_gyro_bmi270_enable_rotation_sampling(self.device.board)
+        # start acc sampling
+        libmetawear.mbl_mw_acc_enable_acceleration_sampling(self.device.board)
+        # start mag sampling
+        libmetawear.mbl_mw_mag_bmm150_enable_b_field_sampling(self.device.board)
+        # start gyro
+        libmetawear.mbl_mw_gyro_bmi270_start(self.device.board)
+        # start acc
+        libmetawear.mbl_mw_acc_start(self.device.board)
+        # start mag
+        libmetawear.mbl_mw_mag_bmm150_start(self.device.board)
 
     def stop(self):
-        libmetawear.mbl_mw_sensor_fusion_stop(self.device.board)
+        # stop gyroscope sampling
+        libmetawear.mbl_mw_gyro_bmi270_stop(self.device.board)
+        libmetawear.mbl_mw_gyro_bmi270_disable_rotation_sampling(self.device.board)
 
-        signal1 = libmetawear.mbl_mw_sensor_fusion_get_data_signal(self.device.board, self.magnitude1)
-        libmetawear.mbl_mw_datasignal_unsubscribe(signal1)
-        signal2 = libmetawear.mbl_mw_sensor_fusion_get_data_signal(self.device.board,cbindings.SensorFusionData.CORRECTED_ACC)
-        libmetawear.mbl_mw_datasignal_unsubscribe(signal2)
-        signal3 = libmetawear.mbl_mw_sensor_fusion_get_data_signal(self.device.board, cbindings.SensorFusionData.CORRECTED_MAG)
-        libmetawear.mbl_mw_datasignal_unsubscribe(signal3)
+        # stop acceleration sampling
+        libmetawear.mbl_mw_acc_stop(self.device.board)
+        libmetawear.mbl_mw_acc_disable_acceleration_sampling(self.device.board)
+
+        # stop magnetometer sampling
+        libmetawear.mbl_mw_mag_bmm150_stop(self.device.board)
+        libmetawear.mbl_mw_mag_bmm150_disable_b_field_sampling(self.device.board)
+
+        acc = libmetawear.mbl_mw_acc_get_acceleration_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(acc)
+
+        gyro = libmetawear.mbl_mw_gyro_bmi270_get_rotation_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(gyro)
+
+        mag = libmetawear.mbl_mw_mag_bmm150_get_b_field_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(mag)
+
         libmetawear.mbl_mw_debug_disconnect(self.device.board)
+
+    def read_config(self, sensor):
+        if sensor == "gyr":
+            libmetawear.mbl_mw_gyro_bmi270_read_config(self.device.board, None, self.cb_read_config)
+
 
 if __name__ == "__main__":
     d = MetaWear("EE:A0:EE:0F:CC:3E")
@@ -82,6 +102,6 @@ if __name__ == "__main__":
     state.setup()
     print("start")
     state.start()
-    sleep(5)
+    sleep(1)
     print("stop...")
     state.stop()
