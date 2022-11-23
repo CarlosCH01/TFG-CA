@@ -119,12 +119,24 @@ class State:
         libmetawear.mbl_mw_datasignal_unsubscribe(mag)
 
 
+def set_user_id():
+    # force a 3-character long ID
+    user = "...."
+    while len(user) not in range(1,4):
+        user = input("Current user ID: ")
+    return user.zfill(3)
+
 if __name__ == "__main__":
     d = MetaWear("EE:A0:EE:0F:CC:3E")
     d.connect()
     print("Connected to " + d.address + " over " + ("USB" if d.usb.is_connected else "BLE"))
 
-    logfile = open("sensor_log.log", "w")
+    logfile = open("../logs/sensor_log.log", "w")
+
+    # log file header: UID padded with zeroes to the left until three digits + \n
+    logfile.write(set_user_id())
+    logfile.write("\n")
+    
     try:
         state = State(d, log=logfile)
 
@@ -134,15 +146,15 @@ if __name__ == "__main__":
         print("start...")
         state.start()
 
-        sleep(1)
+        sleep(60)
 
         print("stop...")
         state.stop()
 
     except Exception as e:
-        logfile.close()
         state.stop()
         traceback.print_exc()
 
     finally:
+        print("[999999999999]", file=logfile)
         logfile.close()
