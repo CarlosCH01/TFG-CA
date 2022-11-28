@@ -1,0 +1,7 @@
+Importar archivo .wav
+Sacar vector con los datos .wav
+Tener microfono activo y sacar informacion de ello
+Guargar esa informacion
+Realizar Ai
+Entrenar AI
+Predecir AI
