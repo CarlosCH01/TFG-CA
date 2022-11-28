@@ -1,3 +1,4 @@
+from datetime import datetime
 from time import sleep
 import traceback
 from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
@@ -5,14 +6,16 @@ from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
 
 class State:
     # init
-    def __init__(self, device, gyro=True, acc=True, mag=True, log=None):
+    def __init__(self, device, gyr=True, acc=True, mag=True, bat=False, log=None):
         self.device = device
         self.cb_acc = cbindings.FnVoid_VoidP_DataP(self.data_handler_acc)
         self.cb_gyr = cbindings.FnVoid_VoidP_DataP(self.data_handler_gyr)
         self.cb_mag = cbindings.FnVoid_VoidP_DataP(self.data_handler_mag)
-        self.read_gyr = gyro
+        self.cb_bat = cbindings.FnVoid_VoidP_DataP(self.data_handler_bat)
+        self.read_gyr = gyr
         self.read_acc = acc
         self.read_mag = mag
+        self.read_bat = bat
         self.logfile = log
 
 
@@ -30,6 +33,11 @@ class State:
         values = parse_value(data)
         print("[%d] mag: (%.4f,%.4f,%.4f)" % (data.contents.epoch // 10, values.x, values.y, values.z), file=self.logfile)
 
+    def data_handler_bat(self, ctx, data):
+        #values = parse_value(data)
+        #print("battery: %d%" % (data.contents.charge))
+        print(data)
+
 
     # SETUP ROUTINES - setup sensors and subscribe
     def setup(self):
@@ -39,6 +47,7 @@ class State:
         if self.read_acc: self._setup_acc()
         if self.read_gyr: self._setup_gyr()
         if self.read_mag: self._setup_mag()
+        if self.read_bat: self._setup_bat()
 
     def _setup_acc(self):
         # get acc signal
@@ -60,6 +69,12 @@ class State:
         mag = libmetawear.mbl_mw_mag_bmm150_get_b_field_data_signal(self.device.board)
         # subscribe to magnetometer
         libmetawear.mbl_mw_datasignal_subscribe(mag, None, self.cb_mag)
+    
+    def _setup_bat(self):
+        signal = libmetawear.mbl_mw_settings_get_battery_state_data_signal(self.device.board)
+        charge = libmetawear.mbl_mw_datasignal_get_component(signal, cbindings.Const.SETTINGS_BATTERY_CHARGE_INDEX)
+        libmetawear.mbl_mw_datasignal_subscribe(charge, None, self.cb_bat)
+        libmetawear.mbl_mw_datasignal_read(charge)
 
 
     # START ROUTINES - start sensors
@@ -67,6 +82,7 @@ class State:
         if self.read_gyr: self._start_gyr()
         if self.read_acc: self._start_acc()
         if self.read_mag: self._start_mag()
+        if self.read_bat: self._start_bat()
 
     def _start_acc(self):
         # start acc sampling
@@ -86,12 +102,18 @@ class State:
         # start mag
         libmetawear.mbl_mw_mag_bmm150_start(self.device.board)
 
+    def _start_bat(self):
+        pass
+        #signal = libmetawear.mbl_mw_settings_get_battery_state_data_signal(self.device.board)
+        #self.libmetawear.mbl_mw_datasignal_read(charge)
+
 
     # STOP ROUTINES - stop sensors and unsubscribe
     def stop(self):
         if self.read_gyr: self._stop_gyr()
         if self.read_acc: self._stop_acc()
         if self.read_mag: self._stop_mag()
+        if self.read_bat: self._stop_bat()
         libmetawear.mbl_mw_debug_disconnect(self.device.board)
 
     def _stop_acc(self): 
@@ -118,27 +140,55 @@ class State:
         mag = libmetawear.mbl_mw_mag_bmm150_get_b_field_data_signal(self.device.board)
         libmetawear.mbl_mw_datasignal_unsubscribe(mag)
 
+    def _stop_bat(self):
+        signal = libmetawear.mbl_mw_settings_get_battery_state_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(signal)
+
 
 def set_user_id():
     # force a 3-character long ID
-    user = "...."
+    user = ""
     while len(user) not in range(1,4):
         user = input("Current user ID: ")
     return user.zfill(3)
 
+def set_measure_time():
+    time = ""
+    while not time.isdigit() or int(time) == 0:
+        time = input("Measure time in seconds: ")
+    return int(time)
+
+def set_measure_magnitudes():
+    answers = {}
+    
+    for k in ("acceleration", "gyro", "magnetic field", "battery"):
+        choice = ""
+        while choice.upper() not in ("Y","N"):
+            choice = input("Measure {}?[Y/N] ".format(k))
+        
+        answers[k[:3]] = choice == "Y"
+    
+    return answers
+
+
 if __name__ == "__main__":
+    user = set_user_id()
+    measure_time = set_measure_time()
+    params = set_measure_magnitudes()
+    logfile = None
+
     d = MetaWear("EE:A0:EE:0F:CC:3E")
     d.connect()
     print("Connected to " + d.address + " over " + ("USB" if d.usb.is_connected else "BLE"))
 
-    logfile = open("../logs/sensor_log.log", "w")
-
-    # log file header: UID padded with zeroes to the left until three digits + \n
-    logfile.write(set_user_id())
-    logfile.write("\n")
+    if params["acc"] or params["gyr"] or params["mag"]:
+        logfile = open("/home/sergio/Documentos/uni/TFG/TFG-CA/metasensor/logs/sensor_{}_{}.log".format(user, datetime.now()), "w")
+        # log file header: UID padded with zeroes to the left until three digits + \n
+        logfile.write(user + "\n")
     
     try:
-        state = State(d, log=logfile)
+        state = State(d, acc=params["acc"], gyr=params["gyr"], \
+                      mag=params["mag"], bat=params["bat"], log=logfile)
 
         print("setup...")
         state.setup()
@@ -146,7 +196,7 @@ if __name__ == "__main__":
         print("start...")
         state.start()
 
-        sleep(60)
+        sleep(measure_time)
 
         print("stop...")
         state.stop()
@@ -156,5 +206,6 @@ if __name__ == "__main__":
         traceback.print_exc()
 
     finally:
-        print("[999999999999]", file=logfile)
-        logfile.close()
+        if logfile: 
+            print("[999999999999]", file=logfile)
+            logfile.close()
