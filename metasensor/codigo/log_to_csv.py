@@ -1,3 +1,4 @@
+import os
 import traceback
 
 class Buffer:
@@ -54,6 +55,11 @@ def mean(list1, list2):
 
 
 if __name__ == "__main__":
+    for i, f in enumerate(os.listdir("/home/sergio/Documentos/uni/TFG/TFG-CA/metasensor/logs/")):
+        print(i+1, f)
+    logfile_index = ""
+    while not logfile_index.isdigit() or logfile_index not in range(1, 1 + len(os.listdir("/home/sergio/Documentos/uni/TFG/TFG-CA/metasensor/logs/"))):
+        logfile_name = input("Select a file from the list: ")
     logfile = open("../logs/sensor_log.log")
     csvfile = open("../logs/sensor_log.csv", "w")
     csvfile.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
