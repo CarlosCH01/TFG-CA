@@ -1,5 +1,10 @@
 import os
+import sys
+import time
 import traceback
+
+import constants as CTS
+
 
 class Buffer:
     """ Implementation of a buffer to convert from log to csv format """
@@ -47,32 +52,58 @@ class Buffer:
 
 
 def mean(list1, list2):
-    """ Compute the mean of two lists. Truncates to the shortest list length """
+    """ Computes the mean of two lists. Truncates to the shortest list length """
     res = []
     for i in range(min(len(list1), len(list2))):
         res.append("%.4f" % ((float(list1[i]) + float(list2[i]))/2) )
     return res
 
+def set_file_origin():
+    """ Returns the name of the log file to convert """
+    files = os.listdir(CTS.LOG_DIR)
+    for i, f in enumerate(files):
+        print(i+1, f)
+
+    logfile_index = ""
+    while not logfile_index.isdigit() or int(logfile_index) - 1 not in range(len(files)):
+        logfile_index = input("Select a file from the list: ")
+
+    return files[int(logfile_index) - 1]
+
+def progress_bar(total, position):
+
+    # setup toolbar
+    sys.stdout.write("[%s]" % (" " * 100))
+    sys.stdout.flush()
+    sys.stdout.write("\b" * (100+1)) # return to start of line, after '['
+
+    for i in range(position // total * 100):
+        # update the bar
+        sys.stdout.write("-")
+        sys.stdout.flush()
+
+    sys.stdout.write("]\n") # this ends the progress bar
+
 
 if __name__ == "__main__":
-    for i, f in enumerate(os.listdir("/home/sergio/Documentos/uni/TFG/TFG-CA/metasensor/logs/")):
-        print(i+1, f)
-    logfile_index = ""
-    while not logfile_index.isdigit() or logfile_index not in range(1, 1 + len(os.listdir("/home/sergio/Documentos/uni/TFG/TFG-CA/metasensor/logs/"))):
-        logfile_name = input("Select a file from the list: ")
-    logfile = open("../logs/sensor_log.log")
-    csvfile = open("../logs/sensor_log.csv", "w")
+    file_origin = set_file_origin()
+    logfile = open(CTS.LOG_DIR + file_origin)
+    csvfile = open(CTS.CSV_DIR + file_origin.replace("log", "csv") , "w")
     csvfile.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
 
     # log file header: UID padded with zeroes to the left until three digits + \n
     # pick only the UID (not newline) and discard padding zeroes
     uid = logfile.readline()[:3].lstrip("0")
+    logfile_size = os.stat(CTS.LOG_DIR + file_origin).st_size
 
     buffer = Buffer(uid)
     old_line = "[000000000000]"
 
     try:
         for line in logfile:
+            #print("{:.2f}".forma(logfile.tell() / logfile_size * 100), end="")
+            #progress_bar(logfile_size, logfile.tell())
+            time.sleep(0.1)
             timestamp = line[1:13]
             old_timestamp = old_line[1:13]
 

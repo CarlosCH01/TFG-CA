@@ -3,6 +3,8 @@ from time import sleep
 import traceback
 from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
 
+import constants as CTS
+
 
 class State:
     # init
@@ -182,7 +184,7 @@ if __name__ == "__main__":
     print("Connected to " + d.address + " over " + ("USB" if d.usb.is_connected else "BLE"))
 
     if params["acc"] or params["gyr"] or params["mag"]:
-        logfile = open("/home/sergio/Documentos/uni/TFG/TFG-CA/metasensor/logs/sensor_{}_{}.log".format(user, datetime.now()), "w")
+        logfile = open(CTS.LOG_DIR + "sensor_{}_{}.log".format(user, datetime.now()), "w")
         # log file header: UID padded with zeroes to the left until three digits + \n
         logfile.write(user + "\n")
     
