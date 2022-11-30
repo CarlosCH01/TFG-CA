@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 import traceback
 
 import constants as CTS
@@ -70,20 +69,6 @@ def set_file_origin():
 
     return files[int(logfile_index) - 1]
 
-def progress_bar(total, position):
-
-    # setup toolbar
-    sys.stdout.write("[%s]" % (" " * 100))
-    sys.stdout.flush()
-    sys.stdout.write("\b" * (100+1)) # return to start of line, after '['
-
-    for i in range(position // total * 100):
-        # update the bar
-        sys.stdout.write("-")
-        sys.stdout.flush()
-
-    sys.stdout.write("]\n") # this ends the progress bar
-
 
 if __name__ == "__main__":
     file_origin = set_file_origin()
@@ -100,10 +85,11 @@ if __name__ == "__main__":
     old_line = "[000000000000]"
 
     try:
+        # counters to show progess
+        acc = 1
+        base = 0
+
         for line in logfile:
-            #print("{:.2f}".forma(logfile.tell() / logfile_size * 100), end="")
-            #progress_bar(logfile_size, logfile.tell())
-            time.sleep(0.1)
             timestamp = line[1:13]
             old_timestamp = old_line[1:13]
 
@@ -126,6 +112,17 @@ if __name__ == "__main__":
             else:
                 buffer[magnitude] = mean(buffer[magnitude], new_content)
             old_line = line
+            
+            # show conversion progess every 1 percent
+            current = 100 * acc / logfile_size
+            if current >= base:
+                sys.stdout.write(" {:.1f} %".format(current))
+                sys.stdout.write("\b" * 7)
+                sys.stdout.flush()
+                base = int(current) + 1
+            acc += len(line)
+
+        print(" 100.0 %")
     except:
         traceback.print_exc()
         print("Error processing file, closing file descriptors...")

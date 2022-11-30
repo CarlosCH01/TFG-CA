@@ -1,8 +1,9 @@
 from datetime import datetime
-from time import sleep
+import sys
+import time
 import traceback
-from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
 
+from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
 import constants as CTS
 
 
@@ -45,7 +46,7 @@ class State:
     def setup(self):
         # ble settings
         libmetawear.mbl_mw_settings_set_connection_parameters(self.device.board, 7.5, 7.5, 0, 6000)
-        sleep(1.5)
+        time.sleep(1.5)
         if self.read_acc: self._setup_acc()
         if self.read_gyr: self._setup_gyr()
         if self.read_mag: self._setup_mag()
@@ -116,7 +117,6 @@ class State:
         if self.read_acc: self._stop_acc()
         if self.read_mag: self._stop_mag()
         if self.read_bat: self._stop_bat()
-        libmetawear.mbl_mw_debug_disconnect(self.device.board)
 
     def _stop_acc(self): 
         # stop acceleration sampling
@@ -145,6 +145,9 @@ class State:
     def _stop_bat(self):
         signal = libmetawear.mbl_mw_settings_get_battery_state_data_signal(self.device.board)
         libmetawear.mbl_mw_datasignal_unsubscribe(signal)
+
+    def disconnect(self):
+        libmetawear.mbl_mw_debug_disconnect(self.device.board)
 
 
 def set_user_id():
@@ -198,16 +201,30 @@ if __name__ == "__main__":
         print("start...")
         state.start()
 
-        sleep(measure_time)
+        # status
+        for i in range(measure_time):
+            sys.stdout.write(" [")
+            sys.stdout.write(" " * (i % 5))
+            sys.stdout.write("*")
+            sys.stdout.write(" " * (4 - (i % 5)))
+            sys.stdout.write("] ")
+            sys.stdout.write("{} s".format(i))
+            sys.stdout.write("\b" * 15)
+            sys.stdout.flush()
+            time.sleep(1)
 
-        print("stop...")
+        print("stop..." + " " * 15)
         state.stop()
+        state.disconnect()
 
     except Exception as e:
+        print("Error! Stopping and disconnecting...")
         state.stop()
+        state.disconnect()
         traceback.print_exc()
 
     finally:
         if logfile: 
             print("[999999999999]", file=logfile)
+            print("Closing file...")
             logfile.close()
