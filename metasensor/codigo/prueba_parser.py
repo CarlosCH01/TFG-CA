@@ -73,37 +73,38 @@ def set_file_origin():
 if __name__ == "__main__":
     file_origin = set_file_origin()
     logfile = open(CTS.LOG_DIR + file_origin)
+    csvfile = None
     #csvfile = open(CTS.CSV_DIR + file_origin.replace("log", "csv") , "w")
     #csvfile.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
 
     # log file header: UID padded with zeroes to the left until three digits + \n
     # pick only the UID (not newline) and discard padding zeroes
-    uid = logfile.readline()[:3].lstrip("0")
+    line = logfile.readline()
+    uid = line[:3].lstrip("0")
     logfile_size = os.stat(CTS.LOG_DIR + file_origin).st_size
 
     buffer = Buffer(uid)
     old_line = "[000000000000]"
+    # store current position
+    p = logfile.tell()
+    # set the first timestamp as a reference
+    reference = int(logfile.readline()[1:13])
+    # return to the start of the first log line
+    logfile.seek(p)
 
     try:
-        # counters to show progess
-        acc = 1
-        base = 0
-
-        for line in logfile:
-            timestamp = line[1:13]
+        while line is not None:
+            line = logfile.readline()
+            
+            timestamp = int(line[1:13])
             old_timestamp = old_line[1:13]
 
-            # did we reach last record? Then write and quit
-            if timestamp == "999999999999":
-                if not buffer.isEmpty():
-                    csvfile.write(buffer.toCSV())
-                break
-
-            # write buffer contents and flush it when new timestamp is reached
-            if timestamp > old_timestamp and not buffer.isEmpty():
-                csvfile.write(buffer.toCSV())
-                buffer.flush()
-
+            '''if timestamp[:10] > curr_sec:
+                if csvfile is not None:
+                    csvfile.close()
+                csvfile = open("x.csv")
+                curr_sec = timestamp[:10]'''
+            
             # fill buffer with log values
             magnitude = line[15:18]
             new_content = line[line.find("(") + 1 : line.find(")")].split(",")
@@ -112,17 +113,7 @@ if __name__ == "__main__":
             else:
                 buffer[magnitude] = mean(buffer[magnitude], new_content)
             old_line = line
-            
-            # show conversion progess every 1 percent
-            current = 100 * acc / logfile_size
-            if current >= base:
-                sys.stdout.write(" {:.1f} %".format(current))
-                sys.stdout.write("\b" * 7)
-                sys.stdout.flush()
-                base = int(current) + 1
-            acc += len(line)
 
-        print(" 100.0 %")
     except:
         traceback.print_exc()
         print("Error processing file, closing file descriptors...")

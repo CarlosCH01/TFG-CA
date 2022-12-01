@@ -187,7 +187,7 @@ if __name__ == "__main__":
     print("Connected to " + d.address + " over " + ("USB" if d.usb.is_connected else "BLE"))
 
     if params["acc"] or params["gyr"] or params["mag"]:
-        logfile = open(CTS.LOG_DIR + "sensor_{}_{}.log".format(user, datetime.now()), "w")
+        logfile = open(CTS.LOG_DIR + "{}_{}.log".format(user, datetime.now().strftime("%Y%m%d_%H%M%S")), "w")
         # log file header: UID padded with zeroes to the left until three digits + \n
         logfile.write(user + "\n")
     
