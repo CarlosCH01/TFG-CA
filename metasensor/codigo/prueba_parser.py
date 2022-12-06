@@ -1,5 +1,5 @@
 import os
-import sys
+import re
 import traceback
 
 import constants as CTS
@@ -24,11 +24,27 @@ class Buffer:
                     empty = False
         return empty
 
-
     def flush(self):
         self.buffer["acc"] = ['','','']
         self.buffer["gyr"] = ['','','']
         self.buffer["mag"] = ['','','']
+
+    def update(self, info):
+        """ 
+        Updates the buffer with new info from the log file
+        Format of this info: [timestamp in 100ths of sec] magnitude: (X,Y,Z)
+        """
+        magnitude = info[15:18]
+        new_content = info[info.find("(") + 1 : info.find(")")].split(",")
+
+        if self.isEmpty(magnitude):
+            self.buffer[magnitude] = new_content
+        else:
+            self.buffer[magnitude] = list( map(
+                                            lambda a,b: "%.4f" % ((float(a)+float(b))/2), 
+                                            self.buffer[magnitude], 
+                                            new_content
+                                            ) )
 
     def toCSV(self):
         return "{},{},{},{},{},{},{},{},{},{}\n"\
@@ -50,13 +66,6 @@ class Buffer:
         return self.toCSV()
 
 
-def mean(list1, list2):
-    """ Computes the mean of two lists. Truncates to the shortest list length """
-    res = []
-    for i in range(min(len(list1), len(list2))):
-        res.append("%.4f" % ((float(list1[i]) + float(list2[i]))/2) )
-    return res
-
 def set_file_origin():
     """ Returns the name of the log file to convert """
     files = os.listdir(CTS.LOG_DIR)
@@ -69,54 +78,68 @@ def set_file_origin():
 
     return files[int(logfile_index) - 1]
 
+def get_id_reference(fd):
+    # log file header: UID padded with zeroes to the left until three digits + \n
+    # pick only the UID (not newline) and discard padding zeroes
+    line = fd.readline()
+    uid = line[:3].lstrip("0")
+    # store current position
+    p = fd.tell()
+    # set the first timestamp as a reference
+    reference = int(fd.readline()[1:13])
+    # return to the start of the first log line
+    fd.seek(p)
+
+    return uid, reference
 
 if __name__ == "__main__":
     file_origin = set_file_origin()
-    logfile = open(CTS.LOG_DIR + file_origin)
-    csvfile = None
-    #csvfile = open(CTS.CSV_DIR + file_origin.replace("log", "csv") , "w")
-    #csvfile.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
-
-    # log file header: UID padded with zeroes to the left until three digits + \n
-    # pick only the UID (not newline) and discard padding zeroes
-    line = logfile.readline()
-    uid = line[:3].lstrip("0")
     logfile_size = os.stat(CTS.LOG_DIR + file_origin).st_size
+    csv_counter = 0
+    #os.mkdir(CTS.CSV_DIR + file_origin.replace(".log",""))
+    baseCSVName = CTS.CSV_DIR + file_origin.replace(".log", f"_{csv_counter}.csv")
 
-    buffer = Buffer(uid)
-    old_line = "[000000000000]"
-    # store current position
-    p = logfile.tell()
-    # set the first timestamp as a reference
-    reference = int(logfile.readline()[1:13])
-    # return to the start of the first log line
-    logfile.seek(p)
+    with open(CTS.LOG_DIR + file_origin) as logfile:
+        res = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
+        uid, reference = get_id_reference(logfile)
+        buffer = Buffer(uid)
+        old_timestamp = 0
 
-    try:
-        while line is not None:
-            line = logfile.readline()
-            
-            timestamp = int(line[1:13])
-            old_timestamp = old_line[1:13]
+        try:
+            while line is not None:
+                line = logfile.readline()
 
-            '''if timestamp[:10] > curr_sec:
-                if csvfile is not None:
-                    csvfile.close()
-                csvfile = open("x.csv")
-                curr_sec = timestamp[:10]'''
-            
-            # fill buffer with log values
-            magnitude = line[15:18]
-            new_content = line[line.find("(") + 1 : line.find(")")].split(",")
-            if buffer.isEmpty(magnitude):
-                buffer[magnitude] = new_content
-            else:
-                buffer[magnitude] = mean(buffer[magnitude], new_content)
-            old_line = line
+                timestamp = int(line[1:13])
 
-    except:
-        traceback.print_exc()
-        print("Error processing file, closing file descriptors...")
+                # write buffer contents and flush it when new timestamp is reached
+                if timestamp > old_timestamp and not buffer.isEmpty():
+                    res += buffer.toCSV()
+                    buffer.flush()
 
-    #csvfile.close()
-    logfile.close()
+                # check whether at least one second has passed
+                if timestamp >= reference + 100:
+                    reference = timestamp
+                    csv_counter += 1
+                    baseCSVName = re.sub("_\d+\.", f"_{csv_counter}.", baseCSVName)
+
+                    # in case of end of log
+                    if timestamp == 999999999999:
+                        if not buffer.isEmpty():
+                            res += buffer.toCSV()
+                        with open(baseCSVName, "w") as csvfile:
+                            csvfile.write(res)
+                        break
+
+                    with open(baseCSVName, "w") as csvfile:
+                        csvfile.write(res)
+                    res = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
+
+                # fill buffer with log values
+                buffer.update(line)
+
+                # update register
+                old_timestamp = timestamp
+
+        except:
+            traceback.print_exc()
+            print("Error processing file, closing file descriptors...")

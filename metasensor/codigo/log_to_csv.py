@@ -73,8 +73,8 @@ def set_file_origin():
 if __name__ == "__main__":
     file_origin = set_file_origin()
     logfile = open(CTS.LOG_DIR + file_origin)
-    #csvfile = open(CTS.CSV_DIR + file_origin.replace("log", "csv") , "w")
-    #csvfile.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
+    csvfile = open(CTS.CSV_DIR + file_origin.replace("log", "csv") , "w")
+    csvfile.write("ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
 
     # log file header: UID padded with zeroes to the left until three digits + \n
     # pick only the UID (not newline) and discard padding zeroes
@@ -127,5 +127,5 @@ if __name__ == "__main__":
         traceback.print_exc()
         print("Error processing file, closing file descriptors...")
 
-    #csvfile.close()
+    csvfile.close()
     logfile.close()
