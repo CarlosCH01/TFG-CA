@@ -169,9 +169,9 @@ def set_measure_magnitudes():
     for k in ("acceleration", "gyro", "magnetic field", "battery"):
         choice = ""
         while choice.upper() not in ("Y","N"):
-            choice = input("Measure {}?[Y/N] ".format(k))
+            choice = input(f"Measure {k}?[Y/N] ")
         
-        answers[k[:3]] = choice == "Y"
+        answers[k[:3]] = choice.upper() == "Y"
     
     return answers
 
@@ -181,6 +181,7 @@ if __name__ == "__main__":
     measure_time = set_measure_time()
     params = set_measure_magnitudes()
     logfile = None
+    state = None
 
     d = MetaWear("EE:A0:EE:0F:CC:3E")
     d.connect()
@@ -201,7 +202,7 @@ if __name__ == "__main__":
         print("start...")
         state.start()
 
-        # status
+        # working...
         for i in range(measure_time):
             sys.stdout.write(" [")
             sys.stdout.write(" " * (i % 5))
@@ -219,8 +220,9 @@ if __name__ == "__main__":
 
     except Exception as e:
         print("Error! Stopping and disconnecting...")
-        state.stop()
-        state.disconnect()
+        if state:
+            state.stop()
+            state.disconnect()
         traceback.print_exc()
 
     finally:
