@@ -9,25 +9,25 @@ class Buffer:
     """ Implementation of a buffer to convert from log to csv format """
     def __init__(self, uid):
         self.uid = uid
-        self.buffer = {"acc": ['','',''], "gyr": ['','',''], "mag": ['','','']}
+        self.buffer = {"timestamp": '',
+                       "accx": '', "accy": '', "accz": '',
+                       "gyrx": '', "gyry": '', "gyrz": '', 
+                       "magx": '', "magy": '', "magz": '' }
 
     def isEmpty(self, magnitude=None):
-        empty = True
         if magnitude is None:
-            for m in self.buffer.keys():
-                for i in self.buffer[m]:
-                    if i != '':
-                        empty = False
+            return self.buffer["timestamp"] == ''
+            
+        if magnitude in ("acc","gyr","mag"):
+            # metawear sends these magnitudes in packets of 3. So, if
+            # x coordinate exists, the rest are assumed to exist
+            return self.buffer[magnitude + "x"] == ''
         else:
-            for i in self.buffer[magnitude]:
-                if i != '':
-                    empty = False
-        return empty
+            return self.buffer[magnitude] == ''
 
     def flush(self):
-        self.buffer["acc"] = ['','','']
-        self.buffer["gyr"] = ['','','']
-        self.buffer["mag"] = ['','','']
+        for k in self.buffer.keys(): 
+            self.buffer[k] = '' 
 
     def update(self, info):
         """ 
@@ -37,21 +37,30 @@ class Buffer:
         magnitude = info[15:18]
         new_content = info[info.find("(") + 1 : info.find(")")].split(",")
 
+        self.buffer["timestamp"] = info[1:13]
+
         if self.isEmpty(magnitude):
-            self.buffer[magnitude] = new_content
+            # data can be one single value or a 3-dimensional vector
+            if len(new_content) > 1:
+                self.buffer[magnitude + "x"] = new_content[0]
+                self.buffer[magnitude + "y"] = new_content[1]
+                self.buffer[magnitude + "z"] = new_content[2]
+            else:
+                self.buffer[magnitude] = new_content
         else:
             # compute the mean of the current value and the new one
-            self.buffer[magnitude] = list( map(
-                                            lambda a,b: "%.4f" % ((float(a)+float(b))/2), 
-                                            self.buffer[magnitude], 
-                                            new_content
-                                            ) )
+            if len(new_content) > 1:
+                for i, coord in enumerate(("x","y","z")):
+                    self.buffer[magnitude + coord] = "%.4f" % ( (float(self.buffer[magnitude + coord]) + float(new_content[i]))/2 )
+            else:
+                self.buffer[magnitude] = "%.4f" % ( (float(self.buffer[magnitude]) + float(new_content))/2 )
 
     def toCSV(self):
-        return "{},{},{},{},{},{},{},{},{},{}\n"\
-                    .format(self.buffer["acc"][0], self.buffer["acc"][1], self.buffer["acc"][2], \
-                            self.buffer["gyr"][0], self.buffer["gyr"][1], self.buffer["gyr"][2], \
-                            self.buffer["mag"][0], self.buffer["mag"][1], self.buffer["mag"][2],
+        return "{},{},{},{},{},{},{},{},{},{},{}\n"\
+                    .format(self.buffer["timestamp"],
+                            self.buffer["accx"], self.buffer["accy"], self.buffer["accz"], \
+                            self.buffer["gyrx"], self.buffer["gyry"], self.buffer["gyrz"], \
+                            self.buffer["magx"], self.buffer["magy"], self.buffer["magz"],
                             self.uid)
 
     def __getitem__(self, key):
@@ -97,56 +106,43 @@ if __name__ == "__main__":
     file_origin = set_file_origin()
     logfile_size = os.stat(CTS.LOG_DIR + file_origin).st_size
     csv_counter = 0
-    baseCSVDirectory = CTS.CSV_DIR + file_origin.replace(".log","/")
+    file_destination = CTS.CSV_DIR + file_origin.replace(".log",".csv")
 
-    if os.path.isdir(baseCSVDirectory):
+    if os.path.exists(file_destination):
         print("\nThere is already a CSV for this log file. Please delete it and rerun this script to proceed.")
         quit()
-    else:
-        os.mkdir(baseCSVDirectory)
 
     with open(CTS.LOG_DIR + file_origin) as logfile:
-        res = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
-        uid, reference = get_id_reference(logfile)
+        # log file header: UID padded with zeroes to the left until three digits + \n
+        # pick only the UID (not newline) and discard padding zeroes
+        line = logfile.readline()
+        uid = line[:3].lstrip("0")
         buffer = Buffer(uid)
         old_timestamp = 0
         line = ""
 
-        try:
-            while line is not None:
-                line = logfile.readline()
+        with open(file_destination,"w") as csvfile:
+            try:
+                csvfile.write("TIMESTAMP,ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
 
-                timestamp = int(line[1:13])
-                #print(res[-25:])
-                # write buffer contents and flush it when new timestamp is reached
-                if timestamp > old_timestamp and not buffer.isEmpty():
-                    res += buffer.toCSV()
-                    buffer.flush()
+                while line is not None:
+                    line = logfile.readline()
+                    timestamp = int(line[1:13])
 
-                # check whether at least one second has passed
-                if timestamp >= reference + 100:
-                    reference = timestamp
-                    csv_counter += 1
-                    baseCSVName = baseCSVDirectory + f"{csv_counter}.csv"
-
-                    # in case of end of log
                     if timestamp == 999999999999:
-                        if not buffer.isEmpty():
-                            res += buffer.toCSV()
-                        with open(baseCSVName, "w") as csvfile:
-                            csvfile.write(res)
                         break
 
-                    with open(baseCSVName, "w") as csvfile:
-                        csvfile.write(res)
-                    res = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
+                    # write buffer contents and flush it when new timestamp is reached
+                    if timestamp > old_timestamp and not buffer.isEmpty():
+                        csvfile.write(buffer.toCSV())
+                        buffer.flush()
 
-                # fill buffer with log values
-                buffer.update(line)
+                    # fill buffer with log values
+                    buffer.update(line)
 
-                # update register
-                old_timestamp = timestamp
+                    # update register
+                    old_timestamp = timestamp
 
-        except:
-            traceback.print_exc()
-            print("Error processing file, closing file descriptors...")
+            except:
+                traceback.print_exc()
+                print("Error processing file, closing file descriptors...")
