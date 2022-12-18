@@ -158,20 +158,18 @@ def set_user_id():
     return user.zfill(3)
 
 def set_measure_time():
-    time = ""
-    while not time.isdigit() or int(time) == 0:
-        time = input("Measure time in seconds: ")
-    return int(time)
+    time = input("Measure time in seconds (default 600): ")
+    return int(time) if time.isdigit() else 600
 
 def set_measure_magnitudes():
     answers = {}
     
     for k in ("acceleration", "gyro", "magnetic field", "battery"):
         choice = ""
-        while choice.upper() not in ("Y","N"):
-            choice = input(f"Measure {k}?[Y/N] ")
+        while choice.upper() not in ("","Y","N"):
+            choice = input(f"Measure {k}?[Y/n] ")
         
-        answers[k[:3]] = choice.upper() == "Y"
+        answers[k[:3]] = choice.upper() == "Y" or choice.upper() == ""
     
     return answers
 
@@ -226,7 +224,6 @@ if __name__ == "__main__":
         traceback.print_exc()
 
     finally:
-        if logfile: 
-            print("[999999999999]", file=logfile)
+        if logfile:
             print("Closing file...")
             logfile.close()

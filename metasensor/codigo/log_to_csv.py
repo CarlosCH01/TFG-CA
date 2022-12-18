@@ -1,5 +1,4 @@
 import os
-import re
 import traceback
 
 import constants as CTS
@@ -88,19 +87,6 @@ def set_file_origin():
 
     return files[int(logfile_index) - 1]
 
-def get_id_reference(fd):
-    # log file header: UID padded with zeroes to the left until three digits + \n
-    # pick only the UID (not newline) and discard padding zeroes
-    line = fd.readline()
-    uid = line[:3].lstrip("0")
-    # store current position
-    p = fd.tell()
-    # set the first timestamp as a reference
-    reference = int(fd.readline()[1:13])
-    # return to the start of the first log line
-    fd.seek(p)
-
-    return uid, reference
 
 if __name__ == "__main__":
     file_origin = set_file_origin()
@@ -119,18 +105,14 @@ if __name__ == "__main__":
         uid = line[:3].lstrip("0")
         buffer = Buffer(uid)
         old_timestamp = 0
-        line = ""
+        line = logfile.readline()
 
         with open(file_destination,"w") as csvfile:
             try:
                 csvfile.write("TIMESTAMP,ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
 
-                while line is not None:
-                    line = logfile.readline()
+                while len(line) > 0:
                     timestamp = int(line[1:13])
-
-                    if timestamp == 999999999999:
-                        break
 
                     # write buffer contents and flush it when new timestamp is reached
                     if timestamp > old_timestamp and not buffer.isEmpty():
@@ -142,6 +124,8 @@ if __name__ == "__main__":
 
                     # update register
                     old_timestamp = timestamp
+
+                    line = logfile.readline()
 
             except:
                 traceback.print_exc()
