@@ -70,7 +70,15 @@ class Buffer:
                              self.buffer["magx"], self.buffer["magy"], self.buffer["magz"],
                              self.uid],
                              columns=["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"])
-        res.set_index("TIMESTAMP")
+        res.set_index("TIMESTAMP", inplace=True)
+        return res
+
+    def toList(self):
+        return [self.buffer["timestamp"], 
+                self.buffer["accx"], self.buffer["accy"], self.buffer["accz"], 
+                self.buffer["gyrx"], self.buffer["gyry"], self.buffer["gyrz"], 
+                self.buffer["magx"], self.buffer["magy"], self.buffer["magz"],
+                self.uid]
 
     def __getitem__(self, key):
         return self.buffer[key]
@@ -124,12 +132,17 @@ if __name__ == "__main__":
 
     os.mkdir(baseCSVDirectory)
 
+    header = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
+    with open(baseCSVName, "w") as csvfile:
+        csvfile.write(header)
+    
+    # DataFrame to be used to compute statistcs
+    dataAggregator = pd.DataFrame(columns=["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"])
+    dataAggregator.set_index("TIMESTAMP", inplace=True)
+    # list of rows to be inserted each second in the DataFrame
+    chunk = []
+
     with open(CTS.LOG_DIR + file_origin) as logfile:
-        header = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
-        with open(baseCSVName, "w") as csvfile:
-            csvfile.write(header)
-        res = pd.DataFrame(columns=["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"],
-                           index=["TIMESTAMP"])
         uid, reference = get_id_reference(logfile)
         buffer = Buffer(uid)
         old_timestamp = 0
@@ -138,41 +151,41 @@ if __name__ == "__main__":
         try:
             while len(line) > 0:
 
-                timestamp = int(line[1:13])
+                # fill buffer with log values
+                buffer.update(line)
+
+                timestamp = int(buffer["timestamp"])
+
                 # write buffer contents and flush it when new timestamp is reached
                 if timestamp > old_timestamp and not buffer.isEmpty():
                     #res += buffer.toCSV()
-                    pd.concat([res, buffer.toDataFrame()])
+                    chunk.append(buffer.toList())
                     buffer.flush()
 
                 # check whether at least one second has passed
                 if timestamp >= reference + 100:
                     reference = timestamp
-                    #csv_counter += 1
-                    #baseCSVName = baseCSVDirectory + f"{csv_counter}.csv"
+                    
+                    dataAggregator = pd.DataFrame(chunk, 
+                                columns=["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"])
+                    dataAggregator.set_index("TIMESTAMP", inplace=True)
+                    if timestamp
+                        print(dataAggregator.head())
+                        print(dataAggregator.describe())
+                        print(dataAggregator.info())
 
-                    # in case of end of log
-                    '''if timestamp == 999999999999:
-                        if not buffer.isEmpty():
-                            res += buffer.toCSV()
-                        with open(baseCSVName, "w") as csvfile:
-                            csvfile.write(res)
-                        break'''
-
-                    with open(baseCSVName, "a") as csvfile:
+                    '''with open(baseCSVName, "a") as csvfile:
                         csvfile.write("chunk size: " + str(len(res)) + "\n")
-                    res = ""
-
-                # fill buffer with log values
-                buffer.update(line)
+                    res = ""'''
 
                 # update register
                 old_timestamp = timestamp
 
                 line = logfile.readline()
 
-            with open(baseCSVName, "a") as csvfile:
+            '''with open(baseCSVName, "a") as csvfile:
                 csvfile.write("chunk size: " + str(len(res)) + "\n")
+                '''
         except:
             traceback.print_exc()
             print("Error processing file, closing file descriptors...")
