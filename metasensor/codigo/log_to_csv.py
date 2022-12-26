@@ -126,6 +126,9 @@ if __name__ == "__main__":
                     old_timestamp = timestamp
 
                     line = logfile.readline()
+                
+                if not buffer.isEmpty():
+                    csvfile.write(buffer.toCSV())
 
             except:
                 traceback.print_exc()
