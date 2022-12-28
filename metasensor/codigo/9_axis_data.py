@@ -1,6 +1,7 @@
 from datetime import datetime
 import sys
 import time
+import tkinter
 import traceback
 
 from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
@@ -162,22 +163,51 @@ def set_measure_time():
     return int(time) if time.isdigit() else 600
 
 def set_measure_magnitudes():
-    answers = {}
+    window = tkinter.Tk()
+    window.title("Magnitudes to measure")
+    window.geometry("300x300")
+
+    acc = tkinter.BooleanVar(value=True)
+    gyr = tkinter.BooleanVar(value=True)
+    mag = tkinter.BooleanVar(value=True)
+    bat = tkinter.BooleanVar()
+
+    def close_window():
+        window.destroy()
     
-    for k in ("acceleration", "gyro", "magnetic field", "battery"):
-        choice = ""
-        while choice.upper() not in ("","Y","N"):
-            choice = input(f"Measure {k}?[Y/n] ")
-        
-        answers[k[:3]] = choice.upper() == "Y" or choice.upper() == ""
+    #lbl_acc = tkinter.Label(window, text="Acceleration").grid(row=0,column=0)
+
+    tkinter.Checkbutton(window, 
+                        text="Acceleration",
+                        variable=acc,
+                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
+    tkinter.Checkbutton(window, 
+                        text="Gyroscope",
+                        variable=gyr,
+                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
+    tkinter.Checkbutton(window, 
+                        text="Magnetic field", 
+                        variable=mag,
+                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
+    tkinter.Checkbutton(window, 
+                        text="Battery", 
+                        variable=bat,
+                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
+    tkinter.Button(window, 
+                    text="Go!", 
+                    command=close_window).pack(side=tkinter.TOP, anchor=tkinter.W)
     
-    return answers
+    window.mainloop()
+    #print(acc.get(), gyr.get(), mag.get(),  bat.get())
+    return {"acc": acc.get(), "gyr": gyr.get(),
+            "mag": mag.get(), "bat": bat.get()}
 
 
 if __name__ == "__main__":
     user = set_user_id()
     measure_time = set_measure_time()
     params = set_measure_magnitudes()
+    
     logfile = None
     state = None
 
