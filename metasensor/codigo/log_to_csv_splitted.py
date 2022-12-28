@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import sys
 import traceback
 
 import constants as CTS
@@ -9,25 +10,25 @@ class Buffer:
     """ Implementation of a buffer to convert from log to csv format """
     def __init__(self, uid):
         self.uid = uid
-        self.buffer = {"timestamp": '',
-                       "accx": '', "accy": '', "accz": '',
-                       "gyrx": '', "gyry": '', "gyrz": '', 
-                       "magx": '', "magy": '', "magz": '' }
+        self.buffer = {"timestamp": 0,
+                       "accx": 0.0, "accy": 0.0, "accz": 0.0,
+                       "gyrx": 0.0, "gyry": 0.0, "gyrz": 0.0, 
+                       "magx": 0.0, "magy": 0.0, "magz": 0.0 }
 
     def isEmpty(self, magnitude=None):
         if magnitude is None:
-            return self.buffer["timestamp"] == ''
+            return self.buffer["timestamp"] == 0
             
         if magnitude in ("acc","gyr","mag"):
             # metawear sends these magnitudes in packets of 3. So, if
             # x coordinate exists, the rest are assumed to exist
-            return self.buffer[magnitude + "x"] == ''
+            return self.buffer[magnitude + "x"] == 0.0
         else:
-            return self.buffer[magnitude] == ''
+            return self.buffer[magnitude] == 0.0
 
     def flush(self):
         for k in self.buffer.keys(): 
-            self.buffer[k] = '' 
+            self.buffer[k] = 0.0
 
     def update(self, info):
         """ 
@@ -37,23 +38,23 @@ class Buffer:
         magnitude = info[15:18]
         new_content = info[info.find("(") + 1 : info.find(")")].split(",")
 
-        self.buffer["timestamp"] = info[1:13]
+        self.buffer["timestamp"] = int(info[1:13])
 
         if self.isEmpty(magnitude):
             # data can be one single value or a 3-dimensional vector
-            if len(new_content) > 1:
-                self.buffer[magnitude + "x"] = new_content[0]
-                self.buffer[magnitude + "y"] = new_content[1]
-                self.buffer[magnitude + "z"] = new_content[2]
+            if len(new_content) == 3:
+                self.buffer[magnitude + "x"] = float(new_content[0])
+                self.buffer[magnitude + "y"] = float(new_content[1])
+                self.buffer[magnitude + "z"] = float(new_content[2])
             else:
-                self.buffer[magnitude] = new_content
+                self.buffer[magnitude] = float(new_content)
         else:
             # compute the mean of the current value and the new one
-            if len(new_content) > 1:
+            if len(new_content) == 3:
                 for i, coord in enumerate(("x","y","z")):
-                    self.buffer[magnitude + coord] = "%.4f" % ( (float(self.buffer[magnitude + coord]) + float(new_content[i]))/2 )
+                    self.buffer[magnitude + coord] = (self.buffer[magnitude + coord] + float(new_content[i]))/2
             else:
-                self.buffer[magnitude] = "%.4f" % ( (float(self.buffer[magnitude]) + float(new_content))/2 )
+                self.buffer[magnitude] = (self.buffer[magnitude] + float(new_content))/2
 
     def toCSV(self):
         return "{},{},{},{},{},{},{},{},{},{},{}\n"\
@@ -123,22 +124,21 @@ if __name__ == "__main__":
     file_origin = set_file_origin()
     logfile_size = os.stat(CTS.LOG_DIR + file_origin).st_size
     csv_counter = 0
-    baseCSVDirectory = CTS.CSV_DIR + file_origin.replace(".log","/")
-    baseCSVName = baseCSVDirectory + "las_stats.csv"
+    #baseCSVDirectory = CTS.CSV_DIR + file_origin.replace(".log","/")
+    #baseCSVName = baseCSVDirectory + "las_stats.csv"
+    base_csv_name = CTS.CSV_DIR + file_origin.replace(".log",".csv")
+    column_names = ["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"]
 
-    if os.path.isdir(baseCSVDirectory):
-        print("\nThere is already a CSV for this log file. Please delete it and rerun this script to proceed.")
+    if os.path.exists(base_csv_name) and input(CTS.ALREADY_EXISTS_ERR_MSG).upper() != "W":
         quit()
 
-    os.mkdir(baseCSVDirectory)
-
-    header = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
+    '''header = "ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n"
     with open(baseCSVName, "w") as csvfile:
-        csvfile.write(header)
+        csvfile.write(header)'''
     
-    # DataFrame to be used to compute statistcs
+    '''# DataFrame to be used to compute statistcs
     dataAggregator = pd.DataFrame(columns=["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"])
-    dataAggregator.set_index("TIMESTAMP", inplace=True)
+    dataAggregator.set_index("TIMESTAMP", inplace=True)'''
     # list of rows to be inserted each second in the DataFrame
     chunk = []
 
@@ -148,10 +148,62 @@ if __name__ == "__main__":
         old_timestamp = 0
         line = logfile.readline()
 
-        try:
-            while len(line) > 0:
+        #try:
+        while len(line) > 0:
+            buffer.update(line)
+            chunk.append(buffer.toList())
 
-                # fill buffer with log values
+            try:
+                timestamp = int(buffer["timestamp"])
+            except:
+                print("Unexpected error: non-numeric timestamp", file=sys.stderr)
+                print("Closing file descriptors and exiting...", file=sys.stderr)
+                break
+
+            if timestamp >= reference + 100:
+                reference = timestamp
+                data_aggregator = pd.DataFrame(chunk, columns=column_names)
+                data_aggregator.set_index("TIMESTAMP", inplace=True)
+                chunk = []
+                with open(base_csv_name, "a") as csv_file:
+                    data_aggregator.describe().to_csv(csv_file, header=False)
+
+            buffer.flush()
+            line = logfile.readline()
+
+        data_aggregator = pd.DataFrame(chunk, columns=column_names)
+        data_aggregator.set_index("TIMESTAMP", inplace=True)
+        '''print(data_aggregator)
+        print(data_aggregator.drop("UID",axis=1).agg(["mean","std","min","max"]))
+        print(data_aggregator.corr())'''
+        with open(base_csv_name, "a") as csv_file: 
+            data_aggregator.describe().to_csv(csv_file, header=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            '''# fill buffer with log values
                 buffer.update(line)
 
                 timestamp = int(buffer["timestamp"])
@@ -174,18 +226,18 @@ if __name__ == "__main__":
                         print(dataAggregator.describe())
                         print(dataAggregator.info())
 
-                    '''with open(baseCSVName, "a") as csvfile:
+                    with open(baseCSVName, "a") as csvfile:
                         csvfile.write("chunk size: " + str(len(res)) + "\n")
-                    res = ""'''
+                    res = ""
 
                 # update register
                 old_timestamp = timestamp
 
                 line = logfile.readline()
-
+            '''
             '''with open(baseCSVName, "a") as csvfile:
                 csvfile.write("chunk size: " + str(len(res)) + "\n")
                 '''
-        except:
-            traceback.print_exc()
-            print("Error processing file, closing file descriptors...")
+        #except:
+        #    traceback.print_exc()
+        #    print("Error processing file, closing file descriptors...")
