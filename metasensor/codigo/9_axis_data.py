@@ -1,14 +1,15 @@
 from datetime import datetime
 import sys
 import time
-import tkinter
+import tkinter as tk
 import traceback
 
 from mbientlab.metawear import MetaWear, libmetawear, parse_value, cbindings
 import constants as CTS
+from state import State
 
 
-class State:
+'''class State:
     # init
     def __init__(self, device, gyr=True, acc=True, mag=True, bat=False, log=None):
         self.device = device
@@ -149,13 +150,87 @@ class State:
 
     def disconnect(self):
         libmetawear.mbl_mw_debug_disconnect(self.device.board)
+'''
+
+class AccState(State):
+    def __init__(self, device, logfile):
+        super().__init__(device, logfile)
+
+    def setup(self):
+        super().setup()
+        # get acc signal
+        acc = libmetawear.mbl_mw_acc_get_acceleration_data_signal(self.device.board)
+        # subscribe to accelerometer
+        libmetawear.mbl_mw_datasignal_subscribe(acc, None, self.callback)
+    
+    def start(self):
+        libmetawear.mbl_mw_acc_enable_acceleration_sampling(self.device.board)
+        # start acc
+        libmetawear.mbl_mw_acc_start(self.device.board)
+    
+    def stop(self): 
+        libmetawear.mbl_mw_acc_stop(self.device.board)
+        libmetawear.mbl_mw_acc_disable_acceleration_sampling(self.device.board)
+        # unsubscribe to accelerometer
+        acc = libmetawear.mbl_mw_acc_get_acceleration_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(acc)
+
+
+class GyroState(State):
+    def __init__(self, device, logfile):
+        super().__init__(device, logfile)
+
+    def setup(self):
+        super().setup()
+        # get gyro signal - MMRS ONLY
+        gyr = libmetawear.mbl_mw_gyro_bmi270_get_rotation_data_signal(self.device.board)
+        # subscribe to gyroscope
+        libmetawear.mbl_mw_datasignal_subscribe(gyr, None, self.callback)
+    
+    def start(self):
+        libmetawear.mbl_mw_gyro_bmi270_enable_rotation_sampling(self.device.board)
+        # start gyro
+        libmetawear.mbl_mw_gyro_bmi270_start(self.device.board)
+    
+    def stop(self): 
+        libmetawear.mbl_mw_gyro_bmi270_stop(self.device.board)
+        libmetawear.mbl_mw_gyro_bmi270_disable_rotation_sampling(self.device.board)
+        # unsubscribe to gyroscope
+        gyro = libmetawear.mbl_mw_gyro_bmi270_get_rotation_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(gyro)
+
+
+class MagState(State):
+    def __init__(self, device, logfile):
+        super().__init__(device, logfile)
+
+    def setup(self):
+        super().setup()
+        libmetawear.mbl_mw_mag_bmm150_stop(self.device.board)
+        libmetawear.mbl_mw_mag_bmm150_set_preset(self.device.board, cbindings.MagBmm150Preset.REGULAR)
+        # get mag signal
+        mag = libmetawear.mbl_mw_mag_bmm150_get_b_field_data_signal(self.device.board)
+        # subscribe to magnetometer
+        libmetawear.mbl_mw_datasignal_subscribe(mag, None, self.callback)
+    
+    def start(self):
+        libmetawear.mbl_mw_mag_bmm150_enable_b_field_sampling(self.device.board)
+        # start mag
+        libmetawear.mbl_mw_mag_bmm150_start(self.device.board)
+    
+    def stop(self): 
+        libmetawear.mbl_mw_mag_bmm150_stop(self.device.board)
+        libmetawear.mbl_mw_mag_bmm150_disable_b_field_sampling(self.device.board)
+        # unsubscribe to magnetometer
+        mag = libmetawear.mbl_mw_mag_bmm150_get_b_field_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(mag)
 
 
 def set_user_id():
     # force a 3-character long ID
     user = ""
-    while len(user) not in range(1,4):
-        user = input("Current user ID: ")
+    while len(user) not in range(1,4) or not user.isalnum():
+        user = input("Current user ID (1 to 3 characters): ")
     return user.zfill(3)
 
 def set_measure_time():
@@ -163,39 +238,39 @@ def set_measure_time():
     return int(time) if time.isdigit() else 600
 
 def set_measure_magnitudes():
-    window = tkinter.Tk()
+    window = tk.Tk()
     window.title("Magnitudes to measure")
     window.geometry("300x300")
 
-    acc = tkinter.BooleanVar(value=True)
-    gyr = tkinter.BooleanVar(value=True)
-    mag = tkinter.BooleanVar(value=True)
-    bat = tkinter.BooleanVar()
+    acc = tk.BooleanVar(value=True)
+    gyr = tk.BooleanVar(value=True)
+    mag = tk.BooleanVar(value=True)
+    bat = tk.BooleanVar()
 
     def close_window():
         window.destroy()
     
-    #lbl_acc = tkinter.Label(window, text="Acceleration").grid(row=0,column=0)
+    #lbl_acc = tk.Label(window, text="Acceleration").grid(row=0,column=0)
 
-    tkinter.Checkbutton(window, 
-                        text="Acceleration",
-                        variable=acc,
-                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
-    tkinter.Checkbutton(window, 
-                        text="Gyroscope",
-                        variable=gyr,
-                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
-    tkinter.Checkbutton(window, 
-                        text="Magnetic field", 
-                        variable=mag,
-                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
-    tkinter.Checkbutton(window, 
-                        text="Battery", 
-                        variable=bat,
-                        justify="left").pack(side=tkinter.TOP, anchor=tkinter.W)
-    tkinter.Button(window, 
-                    text="Go!", 
-                    command=close_window).pack(side=tkinter.TOP, anchor=tkinter.W)
+    tk.Checkbutton(window, 
+                    text="Acceleration",
+                    variable=acc,
+                    justify="left").pack(side=tk.TOP, anchor=tk.W)
+    tk.Checkbutton(window, 
+                    text="Gyroscope",
+                    variable=gyr,
+                    justify="left").pack(side=tk.TOP, anchor=tk.W)
+    tk.Checkbutton(window, 
+                    text="Magnetic field", 
+                    variable=mag,
+                    justify="left").pack(side=tk.TOP, anchor=tk.W)
+    tk.Checkbutton(window, 
+                    text="Battery", 
+                    variable=bat,
+                    justify="left").pack(side=tk.TOP, anchor=tk.W)
+    tk.Button(window, 
+                text="Go!", 
+                command=close_window).pack(side=tk.TOP, anchor=tk.W)
     
     window.mainloop()
     #print(acc.get(), gyr.get(), mag.get(),  bat.get())
@@ -204,12 +279,14 @@ def set_measure_magnitudes():
 
 
 if __name__ == "__main__":
+
     user = set_user_id()
     measure_time = set_measure_time()
     params = set_measure_magnitudes()
     
     logfile = None
     state = None
+    states = []
 
     d = MetaWear("EE:A0:EE:0F:CC:3E")
     d.connect()
@@ -221,14 +298,20 @@ if __name__ == "__main__":
         logfile.write(user + "\n")
     
     try:
-        state = State(d, acc=params["acc"], gyr=params["gyr"], \
-                      mag=params["mag"], bat=params["bat"], log=logfile)
+        #state = State(d, acc=params["acc"], gyr=params["gyr"], \
+        #              mag=params["mag"], bat=params["bat"], log=logfile)
+
+        if params["acc"]: states.append(AccState(d, logfile))
+        if params["gyr"]: states.append(GyroState(d, logfile))
+        if params["mag"]: states.append(MagState(d, logfile))
 
         print("setup...")
-        state.setup()
+        for state in states: state.setup()
+        #state.setup()
 
         print("start...")
-        state.start()
+        for state in states: state.start()
+        #state.start()
 
         # working...
         for i in range(measure_time):
@@ -243,12 +326,18 @@ if __name__ == "__main__":
             time.sleep(1)
 
         print("stop..." + " " * 15)
-        state.stop()
-        state.disconnect()
+        for state in states: 
+            state.stop()
+            state.disconnect()
+        #state.stop()
+        #state.disconnect()
 
     except Exception as e:
         print("Error! Stopping and disconnecting...")
-        if state:
+        '''if states:
+            state.stop()
+            state.disconnect()'''
+        for state in states: 
             state.stop()
             state.disconnect()
         traceback.print_exc()
