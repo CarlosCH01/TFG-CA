@@ -24,16 +24,16 @@ class State:
     # HANDLERS - what to do with sensor generated data
     def data_handler_acc(self, ctx, data):
         values = parse_value(data)
-        # print axis values and hundreths of second since epoch
-        print("[%d] acc: (%.4f,%.4f,%.4f)" % (data.contents.epoch // 10, values.x, values.y, values.z), file=self.logfile)
+        # print axis values and milliseconds since epoch
+        print("[%d] acc: (%.4f,%.4f,%.4f)" % (data.contents.epoch, values.x, values.y, values.z), file=self.logfile)
 
     def data_handler_gyr(self, ctx, data):
         values = parse_value(data)
-        print("[%d] gyr: (%.4f,%.4f,%.4f)" % (data.contents.epoch // 10, values.x, values.y, values.z), file=self.logfile)
+        print("[%d] gyr: (%.4f,%.4f,%.4f)" % (data.contents.epoch, values.x, values.y, values.z), file=self.logfile)
 
     def data_handler_mag(self, ctx, data):
         values = parse_value(data)
-        print("[%d] mag: (%.4f,%.4f,%.4f)" % (data.contents.epoch // 10, values.x, values.y, values.z), file=self.logfile)
+        print("[%d] mag: (%.4f,%.4f,%.4f)" % (data.contents.epoch, values.x, values.y, values.z), file=self.logfile)
 
 
     # SETUP ROUTINES - setup sensors and subscribe

@@ -18,4 +18,56 @@ On success, we will be able to retrieve information relative to the connection a
 
 ## The State class
 
-This abstract class groups in a single entity the interactions we will be having with the device. It receives de Metawear instance previously created and an optional file descriptor to log data. It also defines a callback to be used by children classes
+This class groups in a single entity all the interactions we will be having with the device. It receives de Metawear instance previously created, an optional file descriptor to log data to and several flags for each type of supported sensor, all defaulted to false. On instantiation, it defines internal callbacks to be used when logging data.
+
+### Connection handlers
+
+When streaming data, we have to provide a callback function to the framework, in which we define what to do with incoming data. In this case, all sensors will write the 3 axis readings as well as the timestamp to the provided log file:
+
+```python
+def data_handler_XXX(self, ctx, data):
+    values = parse_value(data)
+    print("[%d] XXX: (%.4f,%.4f,%.4f)" % (data.contents.epoch, 
+                                values.x, values.y, values.z),
+            file=self.logfile)
+```
+
+### Connection setup
+
+Without regarding the type of data to be measured, the `setup()` method sets the connection parameters with the recommended values. Then, we can set up each sensor connection by subscribing to it:
+
+``` python
+def _setup_XXX(self):
+    # get signal
+    signal = libmetawear.mbl_mw_XXX_get_YYY_data_signal(self.device.board)
+    # subscribe to sensor
+    libmetawear.mbl_mw_datasignal_subscribe(signal, None, self.callback_XXX)
+```
+
+### Start streaming
+
+Activating the sensors is as easy as enabling sampling and starting them up:
+``` python
+def _start_XXX(self):
+    # start sampling
+    libmetawear.mbl_mw_XXX_enable_YYY_sampling(self.device.board)
+    # start sensor
+    libmetawear.mbl_mw_XXX_start(self.device.board)
+```
+
+### Stop streaming
+
+When we collected all data needed, cancel the connection stopping the sensor, disabling sampling and, finally, unsubscribing to the sensor:
+``` python
+    def _stop_XXX(self): 
+        # stop sampling
+        libmetawear.mbl_mw_XXX_stop(self.device.board)
+        libmetawear.mbl_mw_XXX_disable_YYY_sampling(self.device.board)
+        # unsubscribe
+        signal = libmetawear.mbl_mw_XXX_get_YYY_data_signal(self.device.board)
+        libmetawear.mbl_mw_datasignal_unsubscribe(signal)
+```
+
+### Closing connection
+
+`libmetawear.mbl_mw_debug_disconnect(self.device.board)` will flush the current configuration, thus allowing a clean setup next time.
