@@ -1,58 +1,60 @@
+import numpy as np
 import os
-import traceback
+import pandas as pd
+import re
+import sys
 
 import constants as CTS
-
 
 class Buffer:
     """ Implementation of a buffer to convert from log to csv format """
     def __init__(self, uid):
         self.uid = uid
-        self.buffer = {"timestamp": '',
-                       "accx": '', "accy": '', "accz": '',
-                       "gyrx": '', "gyry": '', "gyrz": '', 
-                       "magx": '', "magy": '', "magz": '' }
+        self.buffer = {"timestamp": 0,
+                       "accx": np.nan, "accy": np.nan, "accz": np.nan,
+                       "gyrx": np.nan, "gyry": np.nan, "gyrz": np.nan, 
+                       "magx": np.nan, "magy": np.nan, "magz": np.nan }
 
     def isEmpty(self, magnitude=None):
         if magnitude is None:
-            return self.buffer["timestamp"] == ''
+            return self.buffer["timestamp"] == 0
             
         if magnitude in ("acc","gyr","mag"):
             # metawear sends these magnitudes in packets of 3. So, if
             # x coordinate exists, the rest are assumed to exist
-            return self.buffer[magnitude + "x"] == ''
+            return np.isnan(self.buffer[magnitude + "x"])
         else:
-            return self.buffer[magnitude] == ''
+            return np.isnan(self.buffer[magnitude])
 
     def flush(self):
         for k in self.buffer.keys(): 
-            self.buffer[k] = '' 
+            self.buffer[k] = np.nan
 
     def update(self, info):
         """ 
         Updates the buffer with new info from the log file
-        Format of this info: [timestamp in 100ths of sec] magnitude: (X,Y,Z)
+        Format of this info: [timestamp in millisecs] magnitude: (X,Y,Z) | N
         """
-        magnitude = info[15:18]
-        new_content = info[info.find("(") + 1 : info.find(")")].split(",")
+        magnitude   = info[ info.find("]") + 2 : info.find(":") ]
+        new_content = info[ info.find("(") + 1 : info.find(")") ].split(",")
 
-        self.buffer["timestamp"] = info[1:13]
+        self.buffer["timestamp"] = int(info[ info.find("[") + 1 : info.find("]") ])
 
         if self.isEmpty(magnitude):
             # data can be one single value or a 3-dimensional vector
-            if len(new_content) > 1:
-                self.buffer[magnitude + "x"] = new_content[0]
-                self.buffer[magnitude + "y"] = new_content[1]
-                self.buffer[magnitude + "z"] = new_content[2]
+            if len(new_content) == 3:
+                self.buffer[magnitude + "x"] = float(new_content[0])
+                self.buffer[magnitude + "y"] = float(new_content[1])
+                self.buffer[magnitude + "z"] = float(new_content[2])
             else:
-                self.buffer[magnitude] = new_content
+                self.buffer[magnitude] = float(new_content)
         else:
             # compute the mean of the current value and the new one
-            if len(new_content) > 1:
+            if len(new_content) == 3:
                 for i, coord in enumerate(("x","y","z")):
-                    self.buffer[magnitude + coord] = "%.4f" % ( (float(self.buffer[magnitude + coord]) + float(new_content[i]))/2 )
+                    self.buffer[magnitude + coord] = (self.buffer[magnitude + coord] + float(new_content[i]))/2
             else:
-                self.buffer[magnitude] = "%.4f" % ( (float(self.buffer[magnitude]) + float(new_content))/2 )
+                self.buffer[magnitude] = (self.buffer[magnitude] + float(new_content))/2
 
     def toCSV(self):
         return "{},{},{},{},{},{},{},{},{},{},{}\n"\
@@ -61,6 +63,23 @@ class Buffer:
                             self.buffer["gyrx"], self.buffer["gyry"], self.buffer["gyrz"], \
                             self.buffer["magx"], self.buffer["magy"], self.buffer["magz"],
                             self.uid)
+
+    def toDataFrame(self):
+        res = pd.DataFrame([self.buffer["timestamp"], 
+                             self.buffer["accx"], self.buffer["accy"], self.buffer["accz"], 
+                             self.buffer["gyrx"], self.buffer["gyry"], self.buffer["gyrz"], 
+                             self.buffer["magx"], self.buffer["magy"], self.buffer["magz"],
+                             self.uid],
+                             columns=["TIMESTAMP","ACCX","ACCY","ACCZ","GYRX","GYRY","GYRZ","MAGX","MAGY","MAGZ","UID"])
+        res.set_index("TIMESTAMP", inplace=True)
+        return res
+
+    def toList(self):
+        return [self.buffer["timestamp"], 
+                self.buffer["accx"], self.buffer["accy"], self.buffer["accz"], 
+                self.buffer["gyrx"], self.buffer["gyry"], self.buffer["gyrz"], 
+                self.buffer["magx"], self.buffer["magy"], self.buffer["magz"],
+                self.uid]
 
     def __getitem__(self, key):
         return self.buffer[key]
@@ -87,49 +106,79 @@ def set_file_origin():
 
     return files[int(logfile_index) - 1]
 
+def get_id_reference(fd):
+    # log file header: UID padded with zeroes to the left until three digits + \n
+    # pick only the UID (not newline) and discard padding zeroes
+    line = fd.readline()
+    uid = line[:3].lstrip("0")
+    # store current position
+    p = fd.tell()
+    # set the first timestamp as a reference
+    reference = int(fd.readline()[CTS.START_OF_TIMESTAMP:CTS.END_OF_TIMESTAMP])
+    # return to the start of the first log line
+    fd.seek(p)
+
+    return uid, reference
+
+def compute_statistics(base_csv_name, column_names, chunk):
+
+    data_aggregator = pd.DataFrame(chunk, columns=column_names).drop(["TIMESTAMP","UID"], axis=1)
+
+    stats = data_aggregator.mean(numeric_only=True).to_list()
+    stats.extend(data_aggregator.std(numeric_only=True).to_list())
+    stats.extend(data_aggregator.min(numeric_only=True).to_list())
+    stats.extend(data_aggregator.median(numeric_only=True).to_list())
+    stats.extend(data_aggregator.max(numeric_only=True).to_list())
+    
+    # remove square brackets and spaces from the string representation of a list
+    stats = re.sub("\[|\]|\s", "", str(stats))
+    
+    with open(base_csv_name, "a") as csv_file:
+        # write down first timestamp and the UID for reference and the statistics
+        print(f"{chunk[0][0]},{stats},{chunk[0][-1]}", file=csv_file)
+
 
 if __name__ == "__main__":
     file_origin = set_file_origin()
     logfile_size = os.stat(CTS.LOG_DIR + file_origin).st_size
-    csv_counter = 0
-    file_destination = CTS.CSV_DIR + file_origin.replace(".log",".csv")
+    base_csv_name = CTS.CSV_DIR + file_origin.replace(".log",".csv")
 
-    if os.path.exists(file_destination):
-        print("\nThere is already a CSV for this log file. Please delete it and rerun this script to proceed.")
+    # prompting the user to overwrite existing file (W) or abort (any other key)
+    if os.path.exists(base_csv_name) and input(CTS.ALREADY_EXISTS_ERR_MSG).upper() != "W":
         quit()
 
+    with open(base_csv_name, "w") as csvfile:
+        # remove parentheses and spaces from the string representation of a tuple
+        print(re.sub("\(|\)|\s|'", "", str(CTS.COLUMN_NAMES)), file=csvfile)
+
+    # list of rows to be inserted each second into a DataFrame
+    chunk = []
+
     with open(CTS.LOG_DIR + file_origin) as logfile:
-        # log file header: UID padded with zeroes to the left until three digits + \n
-        # pick only the UID (not newline) and discard padding zeroes
-        line = logfile.readline()
-        uid = line[:3].lstrip("0")
+        uid, reference = get_id_reference(logfile)
         buffer = Buffer(uid)
         old_timestamp = 0
         line = logfile.readline()
 
-        with open(file_destination,"w") as csvfile:
+        while len(line) > 0:
+            buffer.update(line)
+            chunk.append(buffer.toList())
+
             try:
-                csvfile.write("TIMESTAMP,ACCX,ACCY,ACCZ,GYRX,GYRY,GYRZ,MAGX,MAGY,MAGZ,UID\n")
-
-                while len(line) > 0:
-                    timestamp = int(line[1:13])
-
-                    # write buffer contents and flush it when new timestamp is reached
-                    if timestamp > old_timestamp and not buffer.isEmpty():
-                        csvfile.write(buffer.toCSV())
-                        buffer.flush()
-
-                    # fill buffer with log values
-                    buffer.update(line)
-
-                    # update register
-                    old_timestamp = timestamp
-
-                    line = logfile.readline()
-                
-                if not buffer.isEmpty():
-                    csvfile.write(buffer.toCSV())
-
+                timestamp = int(buffer["timestamp"])
             except:
-                traceback.print_exc()
-                print("Error processing file, closing file descriptors...")
+                print("Unexpected error: non-numeric timestamp", file=sys.stderr)
+                print("Closing file descriptors and exiting...", file=sys.stderr)
+                break
+
+            # computing statistics every "split interval" milliseconds
+            if timestamp >= reference + CTS.SPLIT_INTERVAL_MS:
+                reference = timestamp
+                compute_statistics(base_csv_name, CTS.RAW_COLUMN_NAMES, chunk)
+                chunk = []
+
+            buffer.flush()
+            line = logfile.readline()
+
+        # store the remaining data
+        compute_statistics(base_csv_name, CTS.RAW_COLUMN_NAMES, chunk)
