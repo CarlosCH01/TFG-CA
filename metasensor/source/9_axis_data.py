@@ -127,7 +127,7 @@ class State:
 
 
 def set_user_id():
-    # force a 3-character long ID
+    """ Function to set a 3-character-long-alphanumeric ID """
     user = ""
     while len(user) not in range(1,4) or not user.isalnum():
         user = input("Current user ID (1 to 3 characters): ")
@@ -142,40 +142,31 @@ def set_measure_magnitudes():
     window.title("Magnitudes to measure")
     window.geometry("300x300")
 
-    acc = tk.BooleanVar(value=True)
-    gyr = tk.BooleanVar(value=True)
-    mag = tk.BooleanVar(value=True)
-    bat = tk.BooleanVar()
+    # define one variable for each measurable magnitude
+    vars = [tk.BooleanVar(value=True) for _ in range(len(CTS.MAGNITUDES))]
+    vars[-1].set(False)
 
     def close_window():
         window.destroy()
-    
-    #lbl_acc = tk.Label(window, text="Acceleration").grid(row=0,column=0)
 
-    tk.Checkbutton(window, 
-                    text="Acceleration",
-                    variable=acc,
-                    justify="left").pack(side=tk.TOP, anchor=tk.W)
-    tk.Checkbutton(window, 
-                    text="Gyroscope",
-                    variable=gyr,
-                    justify="left").pack(side=tk.TOP, anchor=tk.W)
-    tk.Checkbutton(window, 
-                    text="Magnetic field", 
-                    variable=mag,
-                    justify="left").pack(side=tk.TOP, anchor=tk.W)
-    tk.Checkbutton(window, 
-                    text="Battery", 
-                    variable=bat,
-                    justify="left").pack(side=tk.TOP, anchor=tk.W)
+    # display checkbuttons for each magnitude
+    for i in range(len(CTS.MAGNITUDES)):
+        tk.Checkbutton(window, 
+                        text=CTS.MAGNITUDES[i],
+                        variable=vars[i],
+                        justify="left").pack(side=tk.TOP, anchor=tk.W)
+
     tk.Button(window, 
                 text="Go!", 
                 command=close_window).pack(side=tk.TOP, anchor=tk.W)
     
     window.mainloop()
-    #print(acc.get(), gyr.get(), mag.get(),  bat.get())
-    return {"acc": acc.get(), "gyr": gyr.get(),
-            "mag": mag.get(), "bat": bat.get()}
+    
+    # merge the abbreviated names of the magnitudes with the decisions of the user
+    return dict(zip(
+            CTS.MAGNITUDES_ABBR, 
+            [v.get() for v in vars]
+        ))
 
 
 if __name__ == "__main__":
@@ -184,6 +175,8 @@ if __name__ == "__main__":
     measure_time = set_measure_time()
     params = set_measure_magnitudes()
     
+    create_log = False
+    header = ""
     logfile = None
     state = None
 
@@ -198,14 +191,20 @@ if __name__ == "__main__":
     
     print("Connected to " + d.address + " over " + ("USB" if d.usb.is_connected else "BLE"))
 
-    if params["acc"] or params["gyr"] or params["mag"]:
+    # fill header with the magnitudes the user wants to measure
+    for magnitude in CTS.MAGNITUDES_ABBR:
+        if params[magnitude]:
+            create_log = True
+            header += magnitude + ","
+
+    if create_log:
+        header += user
         logfile = open(CTS.LOG_DIR + "{}_{}.log".format(user, datetime.now().strftime("%Y%m%d_%H%M%S")), "w")
-        # log file header: UID padded with zeroes to the left until three digits + \n
-        logfile.write(user + "\n")
-    
+        # log file header: /(magnitude,)+UID\n***\n/
+        print(header + CTS.END_OF_HEADER, end="", file=logfile)
+
     try:
-        state = State(d, acc=params["acc"], gyr=params["gyr"], 
-                         mag=params["mag"], log=logfile)
+        state = State(d, acc=params["acc"], gyr=params["gyr"], mag=params["mag"], log=logfile)
 
         print("setup...")
         state.setup()
