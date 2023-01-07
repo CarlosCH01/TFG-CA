@@ -148,7 +148,7 @@ if __name__ == "__main__":
         quit()
 
     with open(base_csv_name, "w") as csvfile:
-        # remove parentheses and spaces from the string representation of a tuple
+        # remove parentheses, spaces and quotes from the string representation of a tuple
         print(re.sub("\(|\)|\s|'", "", str(CTS.COLUMN_NAMES)), file=csvfile)
 
     # list of rows to be inserted each second into a DataFrame

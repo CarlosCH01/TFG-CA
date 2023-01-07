@@ -4,7 +4,7 @@ CSV_DIR = BASE_DIR + "logs/csv/"
 
 ALREADY_EXISTS_ERR_MSG = "\nThere is already a CSV for this log file. Press W for overwriting it. Press any other key to exit and delete it, then rerun this script.\n"
 
-SPLIT_INTERVAL_MS = 1000
+SPLIT_INTERVAL_MS = 500
 
 START_OF_TIMESTAMP = 1
 END_OF_TIMESTAMP = 14
