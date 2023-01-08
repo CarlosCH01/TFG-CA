@@ -138,12 +138,14 @@ def set_measure_time():
     return int(time) if time.isdigit() else 600
 
 def set_measure_magnitudes():
+    """ Prompt the user to select the magnitudes to measure """
     window = tk.Tk()
     window.title("Magnitudes to measure")
     window.geometry("300x300")
 
     # define one variable for each measurable magnitude
     vars = [tk.BooleanVar(value=True) for _ in range(len(CTS.MAGNITUDES))]
+    # battery measurement is off by default
     vars[-1].set(False)
 
     def close_window():
@@ -180,6 +182,7 @@ if __name__ == "__main__":
     logfile = None
     state = None
 
+    # instantiate a Metawear object and set a callback for disconnection event
     d = MetaWear("EE:A0:EE:0F:CC:3E")
     d.on_disconnect = lambda status: print("disconnecting, " + str(status))
     try:
@@ -200,8 +203,8 @@ if __name__ == "__main__":
     if create_log:
         header += user
         logfile = open(CTS.LOG_DIR + "{}_{}.log".format(user, datetime.now().strftime("%Y%m%d_%H%M%S")), "w")
-        # log file header: /(magnitude,)+UID\n***\n/
-        print(header + CTS.END_OF_HEADER, end="", file=logfile)
+        # log file header: /(magnitude,)+UID\n/
+        print(header, file=logfile)
 
     try:
         state = State(d, acc=params["acc"], gyr=params["gyr"], mag=params["mag"], log=logfile)
@@ -212,7 +215,7 @@ if __name__ == "__main__":
         print("start...")
         state.start()
 
-        # working...
+        # working animation
         for i in range(measure_time):
             sys.stdout.write(" [")
             sys.stdout.write(" " * (i % 5))
