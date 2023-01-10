@@ -7,6 +7,7 @@ LOG_DIR = BASE_DIR + "logs/log/"
 CSV_DIR = BASE_DIR + "logs/csv/"
 
 ALREADY_EXISTS_ERR_MSG = "\nThere is already a CSV for this log file. Press W for overwriting it. Press any other key to exit.\n"
+NOT_NUM_TIMESTAMP_ERR_MSG = "Unexpected error: non-numeric timestamp\nClosing file descriptors and exiting..."
 
 SPLIT_INTERVAL_MS = 500
 

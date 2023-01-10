@@ -93,13 +93,16 @@ def set_file_origin():
     return files[int(log_file_index) - 1]
 
 def read_header(fd):
-    # log file header:
-    # pick only the UID (not newline) and discard padding zeroes
+    """ Read the log file header, which format is: 
+        magnitudes measured separated by commas and UID """
+    
     header = fd.readline().split(",")
+    # pick only the UID (not newline) and discard padding zeroes
     uid = header[-1].replace("\n", "").lstrip("0")
+    # retrieve the measured magnitudes
     magnitudes = header[:-1]
 
-    # store current position, read first timestamp and restore pointer
+    # store current position of file pointer, read first timestamp and restore pointer
     p = fd.tell()
     ref_line = fd.readline()
     reference = int(ref_line[ref_line.find("[")+1:ref_line.find("]")])
@@ -107,14 +110,9 @@ def read_header(fd):
 
     return uid, magnitudes, reference
 
-def generate_column_names(magnitudes) -> str:
-    cols = generate_raw_header(magnitudes)
-    for s in CTS.STATISTICS:
-        for m in range(2, len(cols)):
-            cols[m] += "_" + s
-    return re.sub("\[|\]|\s|'", "", str(cols))
-
 def generate_raw_header(magnitudes) -> list:
+    """ Create a header for a basic DataFrame by formatting the
+        magnitudes passed as parameter (uppercase, add X, Y & Z) """
     header = CTS.BASIC_CSV_HEADER
     for m in magnitudes:
         if m in CTS.TRI_AXIS_MAGS:
@@ -123,6 +121,21 @@ def generate_raw_header(magnitudes) -> list:
         else:
             header += "," + m.upper()
     return header.split(",")
+
+def generate_column_names(magnitudes) -> str:
+    """ Create the header for the final CSV by merging required 
+        statistics names and measured magnitudes names """
+    
+    # get basic names and prepare the new header with basic info
+    raw_cols = generate_raw_header(magnitudes)
+    new_cols = CTS.BASIC_CSV_HEADER.split(",")
+
+    # merge the magnitude names with each statistic
+    for s in CTS.STATISTICS:
+        for m in range(2, len(raw_cols)):
+            new_cols.append(raw_cols[m] + "_" + s)
+    # remove undesired characters from the string repres. of a list
+    return re.sub("\[|\]|\s|'", "", str(new_cols))
 
 def compute_statistics(csv_path, column_names, chunk):
     """ Condense a piece of data into required statistics and append to the destination file """
@@ -135,12 +148,18 @@ def compute_statistics(csv_path, column_names, chunk):
     stats.extend(data_aggregator.median(numeric_only=True).to_list())
     stats.extend(data_aggregator.max(numeric_only=True).to_list())
     
-    # remove square brackets and spaces from the string representation of a list
+    # remove undesired characters from the string representation of a list
     stats = re.sub("\[|\]|\s", "", str(stats))
-    
+    # write the computed statistics as well as the timestamp (i=0) and uid (i=1)
     with open(csv_path, "a") as csv_file:
-        # write down first timestamp and the UID for reference and the statistics
         print(f"{chunk[0][0]},{chunk[0][1]},{stats}", file=csv_file)
+
+def post_process(csv_path):
+    """ Clean data for future study: NaN removal"""
+    dataset = pd.read_csv(csv_path, index_col=0)
+    dataset.fillna(method="ffill", inplace=True)
+    dataset.fillna(method="bfill", inplace=True)
+    dataset.to_csv(csv_path)
 
 
 if __name__ == "__main__":
@@ -159,31 +178,32 @@ if __name__ == "__main__":
         buffer = Buffer(uid, magnitudes)
         raw_header = generate_raw_header(magnitudes)
 
+        # write down the header of the final CSV
         with open(csv_path, "w") as csv_file:
-            # remove parentheses, spaces and quotes from the string representation of a tuple
             print(generate_column_names(magnitudes), file=csv_file)
 
         line = log_file.readline()
 
         while len(line) > 0:
-            buffer.update(line)
-            chunk.append(buffer.toList())
-
+            # introduce raw line into the buffer and retrieve it in nice format
             try:
-                timestamp = int(buffer.timestamp)
-            except:
-                print("Unexpected error: non-numeric timestamp", file=sys.stderr)
-                print("Closing file descriptors and exiting...", file=sys.stderr)
+                buffer.update(line)
+            except ValueError:
+                print(CTS.NOT_NUM_TIMESTAMP_ERR_MSG, file=sys.stderr)
+                print("Cause: " + line, file=sys.stderr)
                 break
 
+            chunk.append(buffer.toList())
+
             # computing statistics every "split interval" milliseconds
-            if timestamp >= reference + CTS.SPLIT_INTERVAL_MS:
-                reference = timestamp
+            if buffer.timestamp >= reference + CTS.SPLIT_INTERVAL_MS:
+                reference = buffer.timestamp
                 compute_statistics(csv_path, raw_header, chunk)
                 chunk = []
 
             buffer.flush()
             line = log_file.readline()
 
-        # store the remaining data
+        # store the remaining data and clean the file
         compute_statistics(csv_path, raw_header, chunk)
+        post_process(csv_path)
